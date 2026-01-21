@@ -1,0 +1,225 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+group 'app.krista.extensions.customerrelations.crm'
+
+/*
+* Use extension.name for archiveBaseName, extension.version for version.
+* Resulting jar: <extension.name>-<extension.version>.jar e.g. AzureAuthentication-2.0.13-rc1.jar
+*/
+def computedBaseName = "Ms Dynamics 365 Customer Service"
+def computedVersion = "local"
+
+tasks.register("setReleaseProperties") {
+    dependsOn("generateReleaseProperties")
+    doFirst {
+        def releasePropsFile = file("release.properties")
+        if (releasePropsFile.exists()) {
+            def props = new Properties()
+            releasePropsFile.withInputStream { stream -> props.load(stream) }
+            computedBaseName = (props['extension.name'] ?: computedBaseName).replaceAll(/\s+/, "-")
+            computedVersion = props['extension.version'] ?: computedVersion
+            project.ext.set("finalBaseName", computedBaseName)
+            project.version = computedVersion
+            println "✓ Loaded extension name = ${computedBaseName}, version = ${computedVersion}"
+
+        } else {
+            logger.warn("⚠ release.properties not found; using default values.")
+            project.ext.set("finalBaseName", computedBaseName)
+            project.version = computedVersion
+        }
+    }
+}
+
+sourceCompatibility = '21'
+targetCompatibility = '21'
+
+repositories {
+    mavenLocal()
+    maven {
+        url "https://packages.cicd.in.antbrains.com/artifactory/libs-release"
+    }
+    mavenCentral()
+}
+
+configurations {
+    implementation {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+}
+
+test {
+    useJUnitPlatform()
+    // Add these settings to help diagnose test issues
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+    // Enable experimental support for Java 23 in Byte Buddy
+    jvmArgs '-Dnet.bytebuddy.experimental=true'
+    // Use a different mocking strategy
+    systemProperty 'mockito.mock.maker', 'subclass'
+    // Increase memory if needed
+    maxHeapSize = "1G"
+}
+
+dependencies {
+    annotationProcessor 'app.krista:extension-impl-anno-processors:1.0.115' // used to generate the extension.json
+    compileOnly 'app.krista:krista-apis:1.0.115' // defines the Krista Service APIs
+    compileOnly 'org.glassfish.hk2:hk2-api:2.6.1' // used to define scope of objects
+    implementation 'com.microsoft.azure:msal4j:1.13.7'
+    implementation 'com.github.scribejava:scribejava-apis:8.3.3'
+    implementation 'org.glassfish.jersey.media:jersey-media-multipart:2.35'
+    implementation 'org.codehaus.jettison:jettison:1.5.0'
+    implementation 'app.krista:krista-apis:1.0.98'
+    implementation 'org.glassfish.hk2:hk2-api:3.0.3'
+    implementation group: 'commons-validator', name: 'commons-validator', version: '1.7'
+    // Test dependencies
+    implementation 'org.mockito:mockito-core:5.5.0'
+    implementation 'com.kristasoft.common:common-test:1.0.38'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
+    testImplementation 'com.microsoft.azure:msal4j:1.13.7'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
+}
+
+tasks.register('createSourceDir', Exec) {
+    dependsOn processResources
+    commandLine "mkdir", "-p", "$projectDir/build/classes/java/main/META-INF/project"
+}
+
+tasks.register('copyGradleFile', Exec) {
+    dependsOn createSourceDir
+    commandLine "cp", "$projectDir/build.gradle", "$projectDir/build/classes/java/main/META-INF/project/build.gradle"
+}
+
+tasks.register('includeSources', Exec) {
+    dependsOn copyGradleFile
+    commandLine "cp", "-r", "$projectDir/src", "$projectDir/build/classes/java/main/META-INF/project/src"
+}
+import java.util.regex.Pattern
+
+tasks.register('generateReleaseProperties') {
+    group = 'build'
+    description = 'Generates release.properties file with extension version and domain information'
+    doLast {
+        def extensionFilePath = 'src/main/java/com/kristasoft/extensions/crm/customer_service/dynamics365_customer_service/MsDynamicsCustomerServiceExtension.java'
+        def caseManagementAreaFilePath = 'src/main/java/com/kristasoft/extensions/crm/customer_service/dynamics365_customer_service/catalog/CaseManagementArea.java'
+        def extensionFile = project.file(extensionFilePath)
+        def sheetAreaFile = project.file(caseManagementAreaFilePath)
+        if (!extensionFile.exists()) {
+            throw new GradleException("Extension file not found: ${extensionFilePath}")
+        }
+        if (!sheetAreaFile.exists()) {
+            throw new GradleException("None of the area files found. At least one must exist.")
+        }
+        def properties = new Properties()
+        // Pre-compile the regex pattern for better performance
+        def keyValuePattern = Pattern.compile(/(\w+)\s*=\s*"([^"]+)"/)
+        // Extract Extension annotation information
+        extractAnnotationInfo(extensionFile, "@Extension", keyValuePattern) { key, value ->
+            if (key == "version") {
+                properties.setProperty("extension.version", value)
+                logger.lifecycle("Found extension version: ${value}")
+            } else if (key == "name") {
+                properties.setProperty("extension.name", value)
+                logger.lifecycle("Found extension name: ${value}")
+            }
+        }
+        // Set default extension name if not found
+        if (!properties.getProperty('extension.name')) {
+            properties.setProperty("extension.name", "Ms Dynamics 365 Customer Service")
+            logger.lifecycle("Set default extension name: Ms Dynamics 365 Customer Service")
+        }
+        // Try to extract Domain annotation information from all area files
+        def domainFound = false
+        def ecosystemFound = false
+        // Check each area file if it exists
+        [caseManagementAreaFilePath].each { areaFilePath ->
+            def areaFile = project.file(areaFilePath)
+            if (areaFile.exists()) {
+                extractAnnotationInfo(areaFile, "@Domain", keyValuePattern) { key, value ->
+                    if (key == "name" && !domainFound) {
+                        properties.setProperty("domain.name", value)
+                        logger.lifecycle("Found domain name: ${value} from ${areaFile.name}")
+                        domainFound = true
+                    } else if (key == "ecosystemName" && !ecosystemFound) {
+                        properties.setProperty("ecosystem.name", value)
+                        logger.lifecycle("Found ecosystem name: ${value} from ${areaFile.name}")
+                        ecosystemFound = true
+                    }
+                }
+            }
+        }
+
+        if (!properties.getProperty('extension.version')) {
+            throw new GradleException("Could not find extension version in ${extensionFilePath}")
+        }
+        // Set default values if not found in annotations
+
+        if (!properties.getProperty('domain.name')) {
+            properties.setProperty("domain.name", "CRM")
+            logger.lifecycle("Set default domain name: Spreadsheets")
+        }
+        if (!properties.getProperty('ecosystem.name')) {
+            properties.setProperty("ecosystem.name", "Customer Relations")
+            logger.lifecycle("Set default ecosystem name: Essentials")
+        }
+        def releasePropertiesFile = project.file('release.properties')
+        def content = properties.collect { key, value -> "${key}=${value}" }.join('\n')
+        releasePropertiesFile.text = content + '\n'
+        logger.lifecycle("Generated release.properties with content:\n${content}")
+    }
+}
+
+// Helper method to extract annotation information
+
+def extractAnnotationInfo(File file, String annotationName, Pattern keyValuePattern, Closure processProperty) {
+    StringBuilder annotationText = new StringBuilder()
+    boolean inAnnotation = false
+    file.eachLine { line ->
+        line = line.trim()
+        if (line.contains(annotationName)) {
+            inAnnotation = true
+            annotationText.setLength(0) // Reset the buffer when starting a new annotation
+            annotationText.append(line)
+        } else if (inAnnotation) {
+            annotationText.append(line)
+        }
+        if (inAnnotation && line.contains(")")) {
+            inAnnotation = false
+            def matcher = keyValuePattern.matcher(annotationText.toString())
+            while (matcher.find()) {
+                def key = matcher.group(1)
+                def value = matcher.group(2)
+                processProperty.call(key, value)
+            }
+        }
+    }
+}
+
+tasks.named("jar") {
+    dependsOn tasks.named("generateReleaseProperties")
+}
+
+jar {
+    dependsOn tasks.named("setReleaseProperties")
+    dependsOn includeSources
+    archiveBaseName = project.ext.has("finalBaseName") ? project.ext.finalBaseName : "Ms-Dynamics-365-Customer-Service"
+    manifest {}
+    from {
+        configurations.implementation.collect {
+            it.isDirectory() ? it : zipTree(it)
+        }
+    }
+    exclude 'META-INF/*.RSA', 'META-INF/*.SF', 'META-INF/*.DSA'
+    duplicatesStrategy = "exclude"
+
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:all,-serial'
+
+}
