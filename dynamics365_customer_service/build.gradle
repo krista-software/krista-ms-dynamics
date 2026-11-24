@@ -1,6 +1,8 @@
 plugins {
     id 'java-library'
+    id 'jacoco'
     id 'maven-publish'
+    id 'org.sonarqube' version '6.3.1.5724'
 }
 group 'app.krista.extensions.customerrelations.crm'
 
@@ -50,9 +52,8 @@ configurations {
     }
 }
 
-test {
+tasks.test {
     useJUnitPlatform()
-    // Add these settings to help diagnose test issues
     testLogging {
         events "passed", "skipped", "failed"
         exceptionFormat "full"
@@ -61,8 +62,8 @@ test {
     jvmArgs '-Dnet.bytebuddy.experimental=true'
     // Use a different mocking strategy
     systemProperty 'mockito.mock.maker', 'subclass'
-    // Increase memory if needed
     maxHeapSize = "1G"
+    finalizedBy(tasks.jacocoTestReport)
 }
 
 dependencies {
@@ -222,4 +223,34 @@ tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
     options.compilerArgs << '-Xlint:all,-serial'
 
+}
+
+sonar {
+    properties {
+        property('sonar.projectName', 'SonarScanner for Krista Global Catalog (ms-dynamics with Jacoco code coverage)')
+        property("sonar.projectKey", "sonar-scanner-ms-dynamics")
+        property("sonar.sources", "src/main/java")
+        property("sonar.tests", "src/test/java")
+        property("sonar.java.binaries", "build/classes/java/main")
+        property("sonar.java.test.binaries", "build/classes/java/test")
+        property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacocoTestReport.xml")
+        property("sonar.junit.reportPaths", "build/test-results/test")
+    }
+}
+
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+}
+
+tasks.named("sonar") {
+    dependsOn(tasks.jacocoTestReport)
 }

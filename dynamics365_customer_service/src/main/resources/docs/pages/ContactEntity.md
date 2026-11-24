@@ -389,7 +389,7 @@ Result: Case is properly associated with contact
 - [Get Contacts By Company Id](pages/GetContactsByCompanyId.md) - Retrieve all contacts for an account
 - [Customer Entity](pages/CustomerEntity.md) - Manage customer accounts
 - [Case Entity](pages/CaseEntity.md) - Create cases associated with contacts
-- [Pick Account Using Name](PickAccountUsingName.md) - Find accounts to associate with contacts
+- [Pick Account Using Name](pages/PickAccountUsingName.md) - Find accounts to associate with contacts
 
 ## Technical Implementation
 

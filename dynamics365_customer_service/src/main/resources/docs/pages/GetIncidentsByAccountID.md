@@ -352,11 +352,11 @@ Result: Comprehensive case history for customer review meeting
 
 ## Related Catalog Requests
 
-- [Get Lookup Account by Account Id](GetLookupAccountByAccountId.md) - Get account details before retrieving incidents
-- [Pick Account Using Name](PickAccountUsingName.md) - Find Account ID by account name
-- [Get Subjects for Case](GetSubjectsForCase.md) - Understand case categorization
+- [Get Lookup Account by Account Id](pages/GetLookupAccountByAccountId.md) - Get account details before retrieving incidents
+- [Pick Account Using Name](pages/PickAccountUsingName.md) - Find Account ID by account name
+- [Get Subjects for Case](pages/GetSubjectsForCase.md) - Understand case categorization
 - [Case Entity](pages/CaseEntity.md) - Create, update, and manage individual cases
-- [Get WorkOrder By AccountId](GetWorkOrderByAccountId.md) - Similar request for field service work orders
+- [Get WorkOrder By AccountId](pages/GetWorkOrderByAccountId.md) - Similar request for field service work orders
 
 ## Technical Implementation
 
